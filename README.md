@@ -127,12 +127,7 @@ outputs/target_weights.csv
 cp .env.example .env
 ```
 
-在本地 shell 或 `.env` 中配置：
-
-```text
-TUSHARE_TOKEN=your_tushare_token
-TUSHARE_BYPASS_SYSTEM_PROXY=1
-```
+在本地 shell 或 `.env` 中填写你自己的 Tushare 配置。变量名参考 `.env.example`，不要把真实 token 提交到 Git。
 
 先做连通性检查：
 
@@ -379,4 +374,3 @@ pe_ttm, pb, ps_ttm, roe, gross_margin, debt_to_assets
 ## License
 
 MIT License. See `LICENSE`.
-
