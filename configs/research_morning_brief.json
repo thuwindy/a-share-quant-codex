@@ -1,0 +1,24 @@
+{
+  "strategy_name": "morning_hotspot_brief",
+  "description": "09:00 morning brief using MX search for policy fast news, industry internal news, and company event updates based on previous close strategy outputs.",
+  "sector_limit": 2,
+  "stock_limit_per_section": 3,
+  "news_items_per_query": 2,
+  "content_char_limit": 140,
+  "mx_query_mode": "compact_dual",
+  "mx_data_stock_limit": 4,
+  "mx_xuangu_elastic_limit": 8,
+  "mx_xuangu_display_limit": 5,
+  "macro_query": "今日A股盘前政策快讯、行业热点、公司突发新闻与财报要点",
+  "combined_sector_query_template": "今日A股盘前政策快讯、行业热点、公司突发新闻与财报要点；重点板块：{sectors}；请优先返回与这些板块最相关的政策、行业内部新闻、机构解读。",
+  "combined_company_query_template": "以下股票请分别汇总最新公告、公司突发新闻、研报观点与风险提示：{stocks}",
+  "mx_data_query_template": "请汇总以下股票的最新价、涨跌幅、成交额、主力资金流向、估值或财务亮点、最新公告要点，并给出盘前校验提示：{stocks}",
+  "mx_xuangu_query_template": "请在A股中筛选20元以下、非ST、成交额活跃、近20日趋势偏强、优先以下板块：{sectors}。返回最值得关注的股票，偏向今日可观察的低价弹性方向。",
+  "sector_query_template": "{sector}板块今日盘前政策快讯、行业内部新闻、机构解读",
+  "company_query_template": "{name}最新公告、公司突发新闻、研报观点、风险提示",
+  "morning_conclusion_templates": {
+    "strong": "热点较集中，优先围绕共振板块做强势股跟踪。",
+    "mixed": "热点分化，控制仓位，优先看有政策/事件催化的方向。",
+    "weak": "外部催化一般，晨报以观察和等待确认为主。"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "signal_mode": "ml",
+  "ranker_type": "dynamic_icir",
+  "model_type": "lightgbm",
+  "model_path": "artifacts/ml_signal/lightgbm_20d.pkl",
+  "prediction_type": "regression",
+  "buy_threshold": 0.02,
+  "sell_threshold": -0.02,
+  "factor_set": "hybrid_ta_ml",
+  "label_horizon": 20,
+  "label_type": "industry_excess",
+  "signal_time": "close",
+  "execution_price": "vwap",
+  "execution_lag": 1,
+  "holding_period": 20,
+  "top_n": 30,
+  "weighting_method": "rank",
+  "max_weight": 0.06,
+  "industry_cap": 0.15,
+  "min_holdings": 20,
+  "weight_change_threshold": 0.04,
+  "rank_change_threshold": 12
+}

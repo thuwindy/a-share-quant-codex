@@ -1,0 +1,9 @@
+{
+  "commission": 0.0003,
+  "slippage": 0.0005,
+  "sell_tax": 0.001,
+  "annual_trading_days": 252,
+  "use_liquidity_aware_cost": true,
+  "portfolio_notional": 10000000.0,
+  "slippage_adv_coef": 0.1
+}

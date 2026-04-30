@@ -1,0 +1,19 @@
+{
+  "label_horizon": 5,
+  "rebalance_every": 5,
+  "top_n": 8,
+  "factor_columns": [
+    "momentum_20_neu",
+    "momentum_60_neu",
+    "reversal_5_neu",
+    "quality_20_neu",
+    "liquidity_20_neu",
+    "volatility_20_neu",
+    "downside_vol_20_neu",
+    "intraday_range_10_neu",
+    "gap_5_neu",
+    "trend_gap_20_neu",
+    "turnover_20_neu",
+    "volume_shock_20_neu"
+  ]
+}

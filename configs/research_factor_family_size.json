@@ -1,0 +1,14 @@
+{
+  "factor_set": "custom",
+  "factor_families": ["size"],
+  "factor_columns": [],
+  "label_type": "industry_excess",
+  "label_horizons": [5],
+  "ranker_type": "dynamic_icir",
+  "ranker_identity": "research_ranker",
+  "research_audit_required": true,
+  "include_technical": true,
+  "include_fundamental": true,
+  "include_flow": true,
+  "include_regime": false
+}

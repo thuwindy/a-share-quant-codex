@@ -1,0 +1,17 @@
+{
+  "use_ml_score": true,
+  "ml_model_type": "xgboost",
+  "ml_model_path": "artifacts/ml_signal/xgboost_high_5d_up.pkl",
+  "ml_score_weight": 0.3,
+  "original_score_weight": 0.7,
+  "ml_label_type": "high_5d_up",
+  "ml_threshold_up": 0.05,
+  "factor_set": "hybrid_ta_ml",
+  "label_horizon": 20,
+  "label_type": "industry_excess",
+  "signal_time": "close",
+  "execution_price": "vwap",
+  "execution_lag": 1,
+  "holding_period": 20,
+  "top_n": 30
+}

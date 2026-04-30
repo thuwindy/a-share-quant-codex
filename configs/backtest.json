@@ -1,0 +1,6 @@
+{
+  "commission": 0.0003,
+  "slippage": 0.0005,
+  "sell_tax": 0.001,
+  "annual_trading_days": 252
+}

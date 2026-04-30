@@ -1,0 +1,346 @@
+version: "1.0"
+project: "a_share_quant_codex"
+timezone: "Asia/Shanghai"
+calendar: "CN_A_SHARE_TRADING_DAY"
+
+global_contract:
+  objective: "Build a reproducible quant workflow from data -> factor -> signal -> backtest -> eval -> visualize -> utils -> live."
+  anti_leakage_rules:
+    - "Point-in-time only: event/fundamental fields can only be used when ann_date <= trade_date."
+    - "No future prices in labels/signals; labels and execution assumptions must match."
+    - "No survivor-only universe: use date-aware tradable filters."
+  price_and_execution_policy:
+    factor_price: "adjusted price (qfq by default; hfq optional)"
+    label_price: "adjusted price, aligned to execution assumption"
+    tradability_and_match_price: "raw/unadjusted price"
+    default_signal_time: "t close (after market close)"
+    default_execution_time: "t+1 close"
+    optional_execution_time:
+      - "t+1 open"
+      - "t+1 vwap (estimated or real if available)"
+  standard_primary_key:
+    - "date"
+    - "code"
+  required_env:
+    - "TUSHARE_TOKEN"
+    - "TUSHARE_HTTP_URL"
+    - "TUSHARE_BYPASS_SYSTEM_PROXY"
+
+time_alignment_rules:
+  signal_execution_holding:
+    stable_default:
+      signal_time: "t close"
+      execution_time: "t+1 close"
+      holding_window: "5 trading days (or strategy-configured window)"
+      label_formula: "close[t+1+H] / close[t+1] - 1, where H is horizon trading days"
+    open_execution_variant:
+      signal_time: "t close"
+      execution_time: "t+1 open"
+      holding_window: "H trading days"
+      label_formula: "close[t+H] / open[t+1] - 1"
+    vwap_execution_variant:
+      signal_time: "t close"
+      execution_time: "t+1 VWAP"
+      holding_window: "H trading days"
+      label_formula: "close[t+H] / vwap[t+1] - 1"
+  factor_and_event_visibility:
+    daily_market_data: "visible at t close"
+    fundamental_events: "visible only from ann_date (inclusive)"
+    analyst_events: "visible only from report publish date (inclusive)"
+    derived_features: "must inherit earliest visibility from source columns"
+  rebalance_and_cost:
+    turnover_definition: "sum(abs(target_weight - current_weight)) / 2 per rebalance"
+    costs:
+      commission: "config-driven"
+      sell_tax: "config-driven"
+      slippage: "fixed or liquidity-aware model"
+
+schemas:
+  daily_bar:
+    description: "Canonical daily panel."
+    primary_key: ["date", "code"]
+    required_fields:
+      - { name: "date", type: "date" }
+      - { name: "code", type: "string" }
+      - { name: "open", type: "float" }
+      - { name: "high", type: "float" }
+      - { name: "low", type: "float" }
+      - { name: "close", type: "float" }
+      - { name: "volume", type: "float" }
+      - { name: "amount", type: "float" }
+      - { name: "market_cap", type: "float_or_na" }
+      - { name: "industry", type: "string_or_na" }
+      - { name: "is_st", type: "bool" }
+      - { name: "is_suspended", type: "bool" }
+      - { name: "can_buy", type: "bool" }
+      - { name: "can_sell", type: "bool" }
+      - { name: "adj_factor", type: "float" }
+  premium_event_panel:
+    description: "Premium/event datasets aligned to daily bars."
+    required_fields:
+      - { name: "date", type: "date" }
+      - { name: "code", type: "string" }
+      - { name: "ann_date", type: "date_or_na" }
+      - { name: "feature_value", type: "float_or_string_or_bool" }
+  factor_panel:
+    description: "Processed factors used by strategy."
+    primary_key: ["date", "code"]
+    required_fields:
+      - { name: "date", type: "date" }
+      - { name: "code", type: "string" }
+      - { name: "factor_name", type: "string (wide table columns allowed)" }
+      - { name: "value", type: "float" }
+      - { name: "value_neutralized", type: "float_or_na" }
+      - { name: "value_ranked", type: "float_or_na" }
+  signal_table:
+    description: "Strategy scores and target weights."
+    primary_key: ["signal_date", "code"]
+    required_fields:
+      - { name: "signal_date", type: "date" }
+      - { name: "execution_date", type: "date" }
+      - { name: "code", type: "string" }
+      - { name: "score", type: "float" }
+      - { name: "target_weight", type: "float" }
+      - { name: "risk_state", type: "string" }
+  fill_table:
+    description: "Backtest/paper simulated fills."
+    required_fields:
+      - { name: "signal_date", type: "date" }
+      - { name: "execution_date", type: "date" }
+      - { name: "code", type: "string" }
+      - { name: "side", type: "string" }
+      - { name: "exec_price", type: "float" }
+      - { name: "exec_type", type: "string (open/close/vwap)" }
+      - { name: "commission", type: "float" }
+      - { name: "slippage", type: "float" }
+      - { name: "sell_tax", type: "float" }
+  metrics_table:
+    required_fields:
+      - { name: "annual_return", type: "float" }
+      - { name: "annual_volatility", type: "float" }
+      - { name: "sharpe", type: "float" }
+      - { name: "max_drawdown", type: "float" }
+      - { name: "avg_turnover", type: "float" }
+      - { name: "gross_annual_return", type: "float_or_na" }
+      - { name: "after_cost_return_drag", type: "float_or_na" }
+
+agents:
+  - id: "A1"
+    name: "DataAgent"
+    mission: "Fetch, clean, normalize, and persist historical + incremental data."
+    consumes:
+      env: ["TUSHARE_TOKEN", "TUSHARE_HTTP_URL", "TUSHARE_BYPASS_SYSTEM_PROXY"]
+      datasets:
+        - "data/a_share_daily_industry.csv"
+    produces:
+      datasets:
+        - { path: "data/a_share_daily_industry.csv", schema: "daily_bar" }
+        - { path: "data/premium_v22/tushare_flow_daily.csv", schema: "premium_event_panel" }
+        - { path: "data/premium_v22/tushare_chip_daily.csv", schema: "premium_event_panel" }
+        - { path: "data/premium_v22/tushare_report_rc_events.csv", schema: "premium_event_panel" }
+        - { path: "outputs/data_quality/daily_quality_*.json", schema: "json_state" }
+        - { path: "outputs/data_quality/daily_quality_*.md", schema: "text_log" }
+    quality_gates:
+      - "PK uniqueness on (date, code)."
+      - "Bool fields normalized to true/false."
+      - "No DtypeWarning in core loaders."
+      - "Daily quality report includes missing ratio, duplicate ratio, and unknown industry ratio."
+      - "Point-in-time alignment check passes for available event columns (event_date <= date)."
+    executable_templates:
+      - ".venv/bin/python scripts/update_tushare_daily_dataset.py --existing-path data/a_share_daily_industry.csv --bypass-system-proxy"
+      - ".venv/bin/python scripts/sync_tushare_premium_tables.py --daily-path data/a_share_daily_industry.csv --output-dir data/premium_v22 --bypass-system-proxy"
+      - ".venv/bin/python scripts/build_daily_data_quality_report.py --data-path data/a_share_daily_industry.csv --output-dir outputs/data_quality --output-prefix daily_quality"
+      - ".venv/bin/python scripts/check_point_in_time_alignment.py --data-path data/daily_monitor_slice_fundamental.csv --output-dir outputs/data_quality --output-prefix t13_point_in_time"
+
+  - id: "A2"
+    name: "AnalysisAgent"
+    mission: "Generate/align feature panels and factor preprocessing-ready data."
+    consumes:
+      datasets:
+        - { path: "data/a_share_daily_industry.csv", schema: "daily_bar" }
+        - { path: "data/premium_v22/tushare_flow_daily.csv", schema: "premium_event_panel" }
+        - { path: "data/premium_v22/tushare_chip_daily.csv", schema: "premium_event_panel" }
+        - { path: "data/premium_v22/tushare_report_rc_events.csv", schema: "premium_event_panel" }
+    produces:
+      datasets:
+        - { path: "data/a_share_daily_premium.csv", schema: "daily_bar" }
+        - { path: "data/daily_monitor_slice.csv", schema: "daily_bar" }
+    quality_gates:
+      - "Feature alignment uses date-aware joins; no right-shift leak."
+      - "Outlier handling + missing policy documented in config/report."
+    executable_templates:
+      - ".venv/bin/python scripts/build_aligned_feature_panels.py --daily-path data/a_share_daily_industry.csv --flow-path data/premium_v22/tushare_flow_daily.csv --chip-path data/premium_v22/tushare_chip_daily.csv --report-rc-path data/premium_v22/tushare_report_rc_events.csv --output-path data/a_share_daily_premium.csv"
+
+  - id: "A3"
+    name: "StrategyAgent"
+    mission: "Transform factor panel into signal/target weights with risk constraints."
+    consumes:
+      datasets:
+        - { path: "data/daily_monitor_slice.csv", schema: "daily_bar" }
+      configs:
+        - "configs/research_production_default.json"
+    produces:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_picks.csv", schema: "signal_table" }
+        - { path: "outputs/daily_monitor_auto/*_picks.json", schema: "signal_table" }
+    quality_gates:
+      - "All signals include signal_time/execution_time."
+      - "Risk constraints active (position cap, industry cap, min holdings)."
+    executable_templates:
+      - ".venv/bin/python scripts/run_daily_monitor.py --data-path data/a_share_daily_industry.csv --slice-path data/daily_monitor_slice.csv --adjust qfq --research-config configs/research_production_default.json --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/daily_monitor_auto --skip-update --skip-backtest"
+
+  - id: "A4"
+    name: "BacktestAgent"
+    mission: "Run cost-aware historical simulation with realistic execution assumptions."
+    consumes:
+      datasets:
+        - { path: "data/daily_monitor_slice.csv", schema: "daily_bar" }
+      configs:
+        - "configs/research_production_default.json"
+        - "configs/backtest_liquidity_stress_15bps.json"
+    produces:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_metrics.json", schema: "metrics_table" }
+        - { path: "outputs/daily_monitor_auto/*_report.md", schema: "metrics_table" }
+    quality_gates:
+      - "Execution model consistent with label definition."
+      - "Commission/slippage/sell_tax explicitly included."
+      - "close/open/vwap alignment checks pass with zero formula/date mismatches (T21)."
+      - "Backtest and paper fixed-cost semantics are consistent for commission/slippage/sell_tax (T22)."
+      - "Quick Top-N + no-trade-band grid output is generated for tuning speed (T23)."
+    executable_templates:
+      - ".venv/bin/python scripts/run_daily_monitor.py --data-path data/a_share_daily_industry.csv --slice-path data/daily_monitor_slice.csv --adjust qfq --research-config configs/research_production_default.json --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/daily_monitor_auto --skip-update"
+      - ".venv/bin/python scripts/check_execution_alignment_variants.py --data-path data/daily_monitor_slice_fundamental.csv --research-config configs/research_production_default.json --adjust qfq --output-dir outputs/data_quality --output-prefix t21_execution_alignment --execution-lag 1"
+      - ".venv/bin/python scripts/check_cost_model_consistency.py --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/data_quality --output-prefix t22_cost_model_consistency"
+      - ".venv/bin/python scripts/run_quick_topn_notrade_grid.py --data-path data/a_share_daily_industry.csv --research-config configs/research_production_default.json --backtest-config configs/backtest_liquidity_stress_15bps.json --adjust qfq --output-dir outputs/quick_grid --output-prefix quick_grid --top-n-grid 20,30,40 --weight-change-grid 0.03,0.05 --rank-change-grid 8,15,20"
+
+  - id: "A5"
+    name: "EvalAgent"
+    mission: "Evaluate strategy quality and detect leakage/bias/drift."
+    consumes:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_metrics.json", schema: "metrics_table" }
+        - { path: "outputs/daily_monitor_auto/*_picks.json", schema: "signal_table" }
+    produces:
+      datasets:
+        - { path: "outputs/ablation_suite/ablation_summary.md", schema: "metrics_table" }
+        - { path: "outputs/ablation_suite/ablation_summary.csv", schema: "metrics_table" }
+        - { path: "outputs/ablation_suite/strategy_change_log.csv", schema: "metrics_table" }
+        - { path: "outputs/ablation_suite/leakage_bias_checklist.csv", schema: "metrics_table" }
+        - { path: "outputs/daily_monitor_auto/*_metric_pack.json", schema: "metrics_table" }
+        - { path: "outputs/daily_monitor_auto/*_metric_pack.csv", schema: "metrics_table" }
+    quality_gates:
+      - "Report includes annual_return, sharpe, max_drawdown, turnover, cost drag."
+      - "Explicit statement on monitor-only vs tradable prototype."
+      - "Standard metric pack must include annual_return/sharpe/max_drawdown/turnover/cost_drag (T30)."
+      - "Experiment summaries include strategy change log (T24)."
+      - "Experiment summaries include leakage/bias checklist (T31)."
+    executable_templates:
+      - ".venv/bin/python scripts/run_ablation_suite.py --data-path data/a_share_daily_industry.csv --research-config configs/recommended_default_config.json --backtest-config configs/backtest_liquidity.json --adjust qfq --output-dir outputs/ablation_suite"
+      - ".venv/bin/python scripts/build_standard_metric_pack.py --monitor-dir outputs/daily_monitor_auto"
+
+  - id: "A6"
+    name: "VisualizeAgent"
+    mission: "Build human-readable daily reports and board comparisons."
+    consumes:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_picks.json", schema: "signal_table" }
+        - { path: "outputs/daily_monitor_under20_elastic/*_picks.json", schema: "signal_table" }
+    produces:
+      datasets:
+        - { path: "outputs/daily_monitor_dual/*_report.md", schema: "metrics_table" }
+    quality_gates:
+      - "Report includes observation pool + tradable snapshot + risk summary."
+      - "Main strategy and elastic strategy displayed side-by-side."
+      - "Dual-board markdown includes a daily checklist for main/under20 freshness and non-empty picks (T32)."
+      - "Main daily markdown is refreshed after risk governor so the latest gate result is visible in the final report (T33)."
+    executable_templates:
+      - ".venv/bin/python scripts/build_dual_board_report.py --main-dir outputs/daily_monitor_auto --elastic-dir outputs/daily_monitor_under20_elastic --output-dir outputs/daily_monitor_dual --output-prefix dual_monitor"
+      - ".venv/bin/python scripts/refresh_daily_monitor_report.py --monitor-dir outputs/daily_monitor_auto --risk-dir outputs/risk_governor"
+
+  - id: "A7"
+    name: "UtilsAgent"
+    mission: "Run orchestration, config hygiene, logs, alerts, scheduling hooks."
+    consumes:
+      datasets:
+        - "configs/agents_manifest.yaml"
+        - "configs/agent_orchestration_template.yaml"
+    produces:
+      datasets:
+        - { path: "outputs/ops_logs/post_close_*.log", schema: "text_log" }
+        - { path: "outputs/ops_logs/alerts/failure_event_*.json", schema: "json_state" }
+        - { path: "outputs/ops_logs/alerts/failure_event_*.md", schema: "text_log" }
+    quality_gates:
+      - "All steps are idempotent and can be retried."
+      - "Failure step is clearly logged."
+      - "Cloud scheduler recipe is available for daily post-close run and log rotation (T43)."
+      - "Workflow failure emits local alert event and optional webhook hook (T44)."
+    executable_templates:
+      - "bash scripts/run_daily_monitor_post_close.sh"
+      - "bash scripts/install_cloud_cron.sh --repo-root /home/ubuntu/a_share_quant_codex --workflow-mode standard --run-premium-sync 0 --run-hour 16 --run-minute 30 --push-hour 19 --push-minute 20 --rotate-hour 18 --rotate-minute 30 --keep-plain-days 7 --keep-gzip-days 45"
+      - ".venv/bin/python scripts/notify_workflow_failure.py --workflow-name post_close_daily_agents --task-id example --exit-code 1 --error-message demo --output-dir outputs/ops_logs/alerts"
+
+  - id: "A8"
+    name: "LiveAgent"
+    mission: "Advance simulated live trading with risk-first guardrails."
+    consumes:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_picks.json", schema: "signal_table" }
+        - { path: "data/daily_monitor_slice.csv", schema: "daily_bar" }
+        - { path: "outputs/paper_monitor_auto/paper_gate_allow.flag", schema: "json_state" }
+      configs:
+        - "configs/paper_trade_guardrails.json"
+        - "configs/backtest_liquidity_stress_15bps.json"
+    produces:
+      datasets:
+        - { path: "outputs/paper_monitor_auto/paper_state.json", schema: "json_state" }
+        - { path: "outputs/paper_monitor_auto/*_report.md", schema: "metrics_table" }
+        - { path: "outputs/paper_monitor_auto/*_staged_orders.csv", schema: "fill_table" }
+    quality_gates:
+      - "Orders are staged for next execution date only."
+      - "Risk overlay can force half_risk/low_risk/no_new_entries."
+      - "Paper execution cost uses same fixed commission/slippage/sell_tax semantics as backtest (T22)."
+      - "Paper live run is allowed only when paper gate flag is `1` (T42)."
+    executable_templates:
+      - ".venv/bin/python scripts/run_paper_monitor.py --monitor-dir outputs/daily_monitor_auto --slice-path data/daily_monitor_slice.csv --adjust qfq --paper-config configs/paper_trade_guardrails.json --backtest-config configs/backtest_liquidity_stress_15bps.json --state-path outputs/paper_monitor_auto/paper_state.json --output-dir outputs/paper_monitor_auto"
+
+  - id: "A9"
+    name: "RiskGovernorAgent"
+    mission: "Run pre-trade/post-close risk gate checks and produce pass/warn/block decision."
+    consumes:
+      datasets:
+        - { path: "outputs/daily_monitor_auto/*_picks.json", schema: "signal_table" }
+        - { path: "outputs/daily_monitor_auto/*_metrics.json", schema: "metrics_table" }
+      configs:
+        - "configs/risk_governor.json"
+    produces:
+      datasets:
+        - { path: "outputs/risk_governor/risk_gate_*.json", schema: "json_state" }
+        - { path: "outputs/risk_governor/risk_gate_*.md", schema: "text_log" }
+        - { path: "outputs/paper_monitor_auto/paper_gate_*.json", schema: "json_state" }
+        - { path: "outputs/paper_monitor_auto/paper_gate_*.md", schema: "text_log" }
+        - { path: "outputs/paper_monitor_auto/paper_gate_allow.flag", schema: "json_state" }
+    quality_gates:
+      - "Risk gate contains explicit checks, thresholds, and triggered reasons."
+      - "Top-industry concentration and single-name concentration are included."
+      - "When risk status is BLOCK, paper gate must set allow flag to `0` and block paper live (T42)."
+    executable_templates:
+      - ".venv/bin/python scripts/run_risk_governor.py --monitor-dir outputs/daily_monitor_auto --risk-config configs/risk_governor.json --output-dir outputs/risk_governor"
+      - ".venv/bin/python scripts/check_paper_trade_gate.py --risk-dir outputs/risk_governor --output-dir outputs/paper_monitor_auto --allow-flag-path outputs/paper_monitor_auto/paper_gate_allow.flag --block-statuses BLOCK"
+
+  - id: "A10"
+    name: "OrchestratorAgent"
+    mission: "Coordinate DAG order, retries, and daily run state across all agents."
+    consumes:
+      datasets:
+        - "configs/agent_orchestration_template.yaml"
+        - "configs/agents_manifest.yaml"
+    produces:
+      datasets:
+        - { path: "outputs/ops_logs/post_close_*.log", schema: "text_log" }
+        - { path: "outputs/ops_logs/post_close_last_success.json", schema: "json_state" }
+    quality_gates:
+      - "Dependency order is respected for all enabled tasks."
+      - "Run status is checkpointed for success/failure handling."
+    executable_templates:
+      - "bash scripts/run_agent_workflow_template.sh"

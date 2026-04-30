@@ -1,0 +1,9 @@
+{
+  "label_horizon": 5,
+  "rebalance_every": 5,
+  "top_n": 8,
+  "factor_columns": [
+    "reversal_5_neu",
+    "intraday_range_10_neu"
+  ]
+}

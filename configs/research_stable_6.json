@@ -1,0 +1,13 @@
+{
+  "label_horizon": 5,
+  "rebalance_every": 5,
+  "top_n": 8,
+  "factor_columns": [
+    "reversal_5_neu",
+    "intraday_range_10_neu",
+    "gap_5_neu",
+    "momentum_20_neu",
+    "volatility_20_neu",
+    "turnover_20_neu"
+  ]
+}

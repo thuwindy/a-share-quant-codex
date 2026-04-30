@@ -1,0 +1,11 @@
+version: "3.9"
+services:
+  quant-dashboard:
+    build: .
+    container_name: ashare-quant-dashboard
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./outputs:/app/outputs
+      - ./data:/app/data
+    restart: unless-stopped

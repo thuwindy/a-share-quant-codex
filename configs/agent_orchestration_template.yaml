@@ -1,0 +1,256 @@
+version: "1.0"
+workflow_name: "post_close_daily_agents"
+timezone: "Asia/Shanghai"
+
+schedule_template:
+  trigger: "trading_day"
+  run_after_close: "15:10"
+  run_mode:
+    - "manual"
+    - "cron"
+    - "server-supervisor"
+
+runtime_defaults:
+  cwd: "/path/to/a_share_quant_codex"
+  shell: "bash"
+  fail_fast: true
+  log_dir: "outputs/ops_logs"
+  env:
+    WORKFLOW_MODE: "standard"
+    PYTHONPATH: "src"
+    TUSHARE_BYPASS_SYSTEM_PROXY: "1"
+    UNDER20_SKIP_BACKTEST: "1"
+    PIT_DATA_PATH: "data/daily_monitor_slice_fundamental.csv"
+    EXEC_ALIGNMENT_DATA_PATH: "data/daily_monitor_slice_fundamental.csv"
+    METRIC_PACK_MONITOR_DIR: "outputs/daily_monitor_auto"
+    DAILY_RISK_REFRESH_MONITOR_DIR: "outputs/daily_monitor_auto"
+    DAILY_RISK_REFRESH_RISK_DIR: "outputs/risk_governor"
+    QUICK_GRID_DATA_PATH: "data/a_share_daily_industry.csv"
+    QUICK_GRID_RESEARCH_CONFIG: "configs/research_production_default.json"
+    QUICK_GRID_BACKTEST_CONFIG: "configs/backtest_liquidity_stress_15bps.json"
+    QUICK_GRID_OUTPUT_DIR: "outputs/quick_grid"
+    QUICK_GRID_OUTPUT_PREFIX: "quick_grid"
+    QUICK_GRID_TOP_N_GRID: "20,30,40"
+    QUICK_GRID_WEIGHT_CHANGE_GRID: "0.03,0.05"
+    QUICK_GRID_RANK_CHANGE_GRID: "8,15,20"
+    QUICK_GRID_SLEEVE_GRID: ""
+    PAPER_GATE_RISK_DIR: "outputs/risk_governor"
+    PAPER_GATE_OUTPUT_DIR: "outputs/paper_monitor_auto"
+    PAPER_GATE_FLAG_PATH: "outputs/paper_monitor_auto/paper_gate_allow.flag"
+    FAILURE_NOTIFY_OUTPUT_DIR: "outputs/ops_logs/alerts"
+    FAILURE_NOTIFY_WEBHOOK_URL: ""
+    RESEARCH_CONFIG_MAIN: "configs/research_production_default.json"
+    RESEARCH_CONFIG_ELASTIC: "configs/research_under20_elastic_top20.json"
+    BACKTEST_CONFIG: "configs/backtest_liquidity_stress_15bps.json"
+    PREMIUM_OVERLAP_DAYS: "5"
+    PREMIUM_FULL_REFRESH: "0"
+    PREMIUM_TASK_MAX_RETRIES: "2"
+    PREMIUM_TASK_RETRY_SLEEP_SECONDS: "5"
+    PREMIUM_DEGRADE_REPORT_RC_ON_ERROR: "1"
+
+switches:
+  run_data_sync: true
+  run_data_quality: true
+  run_point_in_time_check: true
+  run_execution_alignment_check: false
+  run_cost_model_check: false
+  run_metric_pack: true
+  run_quick_grid: false
+  run_paper_gate: true
+  run_premium_sync: true
+  run_analysis_align: true
+  run_main_monitor: true
+  run_elastic_monitor: true
+  run_risk_governor: true
+  run_daily_risk_refresh: true
+  run_backtest_main: true
+  run_eval_ablation: false
+  run_dual_report: true
+  run_paper_live: true
+  run_failure_notify: true
+
+datasets:
+  raw_daily: "data/a_share_daily_industry.csv"
+  main_slice: "data/daily_monitor_slice.csv"
+  under20_slice: "data/daily_monitor_slice_under20_elastic.csv"
+  premium_dir: "data/premium_v22"
+  outputs_main: "outputs/daily_monitor_auto"
+  outputs_under20: "outputs/daily_monitor_under20_elastic"
+  outputs_dual: "outputs/daily_monitor_dual"
+  outputs_paper: "outputs/paper_monitor_auto"
+
+tasks:
+  - id: "T1_data_sync"
+    agent_id: "A1"
+    enabled_by: "run_data_sync"
+    depends_on: []
+    command: ".venv/bin/python scripts/update_tushare_daily_dataset.py --existing-path data/a_share_daily_industry.csv --bypass-system-proxy"
+    outputs:
+      - "data/a_share_daily_industry.csv"
+
+  - id: "T1b_data_quality"
+    agent_id: "A1"
+    enabled_by: "run_data_quality"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/build_daily_data_quality_report.py --data-path data/a_share_daily_industry.csv --output-dir outputs/data_quality --output-prefix daily_quality"
+    outputs:
+      - "outputs/data_quality/daily_quality_*.json"
+      - "outputs/data_quality/daily_quality_*.md"
+      - "outputs/data_quality/daily_quality_*.csv"
+
+  - id: "T1c_point_in_time"
+    agent_id: "A1"
+    enabled_by: "run_point_in_time_check"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/check_point_in_time_alignment.py --data-path data/daily_monitor_slice_fundamental.csv --output-dir outputs/data_quality --output-prefix t13_point_in_time"
+    outputs:
+      - "outputs/data_quality/t13_point_in_time_*.json"
+      - "outputs/data_quality/t13_point_in_time_*.md"
+      - "outputs/data_quality/t13_point_in_time_*.csv"
+
+  - id: "T21_execution_alignment"
+    agent_id: "A4"
+    enabled_by: "run_execution_alignment_check"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/check_execution_alignment_variants.py --data-path data/daily_monitor_slice_fundamental.csv --research-config configs/research_production_default.json --adjust qfq --output-dir outputs/data_quality --output-prefix t21_execution_alignment --execution-lag 1"
+    outputs:
+      - "outputs/data_quality/t21_execution_alignment_*.json"
+      - "outputs/data_quality/t21_execution_alignment_*.md"
+      - "outputs/data_quality/t21_execution_alignment_*.csv"
+
+  - id: "T22_cost_model"
+    agent_id: "A4"
+    enabled_by: "run_cost_model_check"
+    depends_on: []
+    command: ".venv/bin/python scripts/check_cost_model_consistency.py --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/data_quality --output-prefix t22_cost_model_consistency"
+    outputs:
+      - "outputs/data_quality/t22_cost_model_consistency_*.json"
+      - "outputs/data_quality/t22_cost_model_consistency_*.md"
+      - "outputs/data_quality/t22_cost_model_consistency_*.csv"
+
+  - id: "T2_premium_sync"
+    agent_id: "A1"
+    enabled_by: "run_premium_sync"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/sync_tushare_premium_tables.py --daily-path data/a_share_daily_industry.csv --output-dir data/premium_v22 --bypass-system-proxy"
+    outputs:
+      - "data/premium_v22/tushare_flow_daily.csv"
+      - "data/premium_v22/tushare_chip_daily.csv"
+      - "data/premium_v22/tushare_report_rc_events.csv"
+
+  - id: "T3_analysis_align"
+    agent_id: "A2"
+    enabled_by: "run_analysis_align"
+    depends_on: ["T2_premium_sync"]
+    command: ".venv/bin/python scripts/build_aligned_feature_panels.py --daily-path data/a_share_daily_industry.csv --flow-path data/premium_v22/tushare_flow_daily.csv --chip-path data/premium_v22/tushare_chip_daily.csv --report-rc-path data/premium_v22/tushare_report_rc_events.csv --output-path data/a_share_daily_premium.csv"
+    outputs:
+      - "data/a_share_daily_premium.csv"
+
+  - id: "T4_main_monitor"
+    agent_id: "A3"
+    enabled_by: "run_main_monitor"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/run_daily_monitor.py --data-path data/a_share_daily_industry.csv --slice-path data/daily_monitor_slice.csv --adjust qfq --research-config configs/research_production_default.json --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/daily_monitor_auto --skip-update"
+    outputs:
+      - "outputs/daily_monitor_auto/*_picks.json"
+      - "outputs/daily_monitor_auto/*_metrics.json"
+
+  - id: "T30_metric_pack"
+    agent_id: "A5"
+    enabled_by: "run_metric_pack"
+    depends_on: ["T4_main_monitor"]
+    command: ".venv/bin/python scripts/build_standard_metric_pack.py --monitor-dir outputs/daily_monitor_auto"
+    outputs:
+      - "outputs/daily_monitor_auto/*_metric_pack.json"
+      - "outputs/daily_monitor_auto/*_metric_pack.csv"
+      - "outputs/daily_monitor_auto/*_metric_pack.md"
+
+  - id: "T23_quick_grid"
+    agent_id: "A4"
+    enabled_by: "run_quick_grid"
+    depends_on: ["T4_main_monitor"]
+    command: ".venv/bin/python scripts/run_quick_topn_notrade_grid.py --data-path data/a_share_daily_industry.csv --research-config configs/research_production_default.json --backtest-config configs/backtest_liquidity_stress_15bps.json --adjust qfq --output-dir outputs/quick_grid --output-prefix quick_grid --top-n-grid 20,30,40 --weight-change-grid 0.03,0.05 --rank-change-grid 8,15,20"
+    outputs:
+      - "outputs/quick_grid/quick_grid_summary.csv"
+      - "outputs/quick_grid/quick_grid_summary.json"
+      - "outputs/quick_grid/quick_grid_best_overrides.json"
+      - "outputs/quick_grid/quick_grid_summary.md"
+
+  - id: "T5_under20_elastic"
+    agent_id: "A3"
+    enabled_by: "run_elastic_monitor"
+    depends_on: ["T1_data_sync"]
+    command: ".venv/bin/python scripts/run_daily_monitor.py --data-path data/a_share_daily_industry.csv --slice-path data/daily_monitor_slice_under20_elastic.csv --adjust qfq --research-config configs/research_under20_elastic_top20.json --backtest-config configs/backtest_liquidity_stress_15bps.json --output-dir outputs/daily_monitor_under20_elastic --output-prefix under20_elastic --skip-update --skip-backtest"
+    outputs:
+      - "outputs/daily_monitor_under20_elastic/*_picks.json"
+
+  - id: "T6_risk_governor"
+    agent_id: "A9"
+    enabled_by: "run_risk_governor"
+    depends_on: ["T4_main_monitor"]
+    command: ".venv/bin/python scripts/run_risk_governor.py --monitor-dir outputs/daily_monitor_auto --risk-config configs/risk_governor.json --output-dir outputs/risk_governor"
+    outputs:
+      - "outputs/risk_governor/risk_gate_*.json"
+      - "outputs/risk_governor/risk_gate_*.md"
+
+  - id: "T33_daily_risk_refresh"
+    agent_id: "A6"
+    enabled_by: "run_daily_risk_refresh"
+    depends_on: ["T4_main_monitor", "T6_risk_governor"]
+    command: ".venv/bin/python scripts/refresh_daily_monitor_report.py --monitor-dir outputs/daily_monitor_auto --risk-dir outputs/risk_governor"
+    outputs:
+      - "outputs/daily_monitor_auto/*_report.md"
+
+  - id: "T7_eval_ablation"
+    agent_id: "A5"
+    enabled_by: "run_eval_ablation"
+    depends_on: ["T4_main_monitor"]
+    command: ".venv/bin/python scripts/run_ablation_suite.py --data-path data/a_share_daily_industry.csv --research-config configs/recommended_default_config.json --backtest-config configs/backtest_liquidity.json --adjust qfq --output-dir outputs/ablation_suite"
+    outputs:
+      - "outputs/ablation_suite/ablation_summary.md"
+      - "outputs/ablation_suite/ablation_summary.csv"
+      - "outputs/ablation_suite/strategy_change_log.csv"
+      - "outputs/ablation_suite/leakage_bias_checklist.csv"
+
+  - id: "T8_dual_report"
+    agent_id: "A6"
+    enabled_by: "run_dual_report"
+    depends_on: ["T4_main_monitor", "T5_under20_elastic"]
+    command: ".venv/bin/python scripts/build_dual_board_report.py --main-dir outputs/daily_monitor_auto --elastic-dir outputs/daily_monitor_under20_elastic --output-dir outputs/daily_monitor_dual --output-prefix dual_monitor"
+    outputs:
+      - "outputs/daily_monitor_dual/*_report.md"
+
+  - id: "T9_paper_live"
+    agent_id: "A8"
+    enabled_by: "run_paper_live"
+    depends_on: ["T4_main_monitor", "T6_risk_governor", "T42_paper_gate"]
+    command: ".venv/bin/python scripts/run_paper_monitor.py --monitor-dir outputs/daily_monitor_auto --slice-path data/daily_monitor_slice.csv --adjust qfq --paper-config configs/paper_trade_guardrails.json --backtest-config configs/backtest_liquidity_stress_15bps.json --state-path outputs/paper_monitor_auto/paper_state.json --output-dir outputs/paper_monitor_auto"
+    outputs:
+      - "outputs/paper_monitor_auto/paper_state.json"
+      - "outputs/paper_monitor_auto/*_report.md"
+
+  - id: "T42_paper_gate"
+    agent_id: "A9"
+    enabled_by: "run_paper_gate"
+    depends_on: ["T6_risk_governor"]
+    command: ".venv/bin/python scripts/check_paper_trade_gate.py --risk-dir outputs/risk_governor --output-dir outputs/paper_monitor_auto --allow-flag-path outputs/paper_monitor_auto/paper_gate_allow.flag --block-statuses BLOCK"
+    outputs:
+      - "outputs/paper_monitor_auto/paper_gate_*.json"
+      - "outputs/paper_monitor_auto/paper_gate_*.md"
+      - "outputs/paper_monitor_auto/paper_gate_allow.flag"
+
+failure_policy:
+  on_failure: "stop_and_alert"
+  alert_hook_command: ".venv/bin/python scripts/notify_workflow_failure.py --workflow-name post_close_daily_agents --output-dir outputs/ops_logs/alerts"
+  retry:
+    max_retries: 1
+    retry_backoff_seconds: 30
+  checkpoint_files:
+    - "outputs/ops_logs/post_close_last_success.json"
+    - "outputs/ops_logs/post_close_last_error.json"
+
+notes:
+  - "Use this file as the control-plane template for cron/openclaw/server runners."
+  - "Time alignment and schema constraints are defined in configs/agents_manifest.yaml."
+  - "If UNDER20_SKIP_BACKTEST=0 is needed, override env in runtime_defaults.env before scheduling."
+  - "WORKFLOW_MODE supports fast/standard/full in scripts/run_agent_workflow_template.sh (RUN_* overrides still win)."

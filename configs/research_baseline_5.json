@@ -1,0 +1,12 @@
+{
+  "label_horizon": 5,
+  "rebalance_every": 5,
+  "top_n": 8,
+  "factor_columns": [
+    "momentum_20_neu",
+    "reversal_5_neu",
+    "quality_20_neu",
+    "liquidity_20_neu",
+    "volatility_20_neu"
+  ]
+}

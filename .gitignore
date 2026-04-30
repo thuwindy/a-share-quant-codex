@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local secrets and machine state
+.env
+.env.*
+!.env.example
+.localhome/
+.mplconfig/
+*.pem
+*.key
+*.crt
+*.p12
+*.token
+*token*
+*secret*
+
+# Runtime data and generated artifacts
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+artifacts/
+models/
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.zip
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+

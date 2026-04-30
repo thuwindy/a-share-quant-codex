@@ -1,0 +1,14 @@
+{
+  "initial_cash": 200000.0,
+  "min_cash_buffer": 0.10,
+  "min_trade_notional": 3000.0,
+  "max_new_positions_per_day": 1,
+  "drawdown_soft_limit": 0.06,
+  "drawdown_hard_limit": 0.10,
+  "daily_loss_soft_limit": 0.012,
+  "daily_loss_hard_limit": 0.025,
+  "soft_risk_multiplier": 0.5,
+  "hard_risk_multiplier": 0.0,
+  "block_new_entries_on_soft_risk": true,
+  "block_new_entries_on_low_risk": true
+}

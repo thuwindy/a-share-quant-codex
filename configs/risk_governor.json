@@ -1,0 +1,11 @@
+{
+  "min_annual_return": 0.0,
+  "min_sharpe": 0.2,
+  "max_drawdown": -0.3,
+  "max_avg_turnover": 0.2,
+  "max_top_industry_weight": 0.2,
+  "max_single_weight": 0.12,
+  "min_selected_count": 12,
+  "block_drawdown_breach": true,
+  "block_concentration_breach": true
+}

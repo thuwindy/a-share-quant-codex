@@ -1,0 +1,14 @@
+{
+  "factor_set": "custom",
+  "factor_families": ["value_low_freq", "quality_low_freq"],
+  "factor_columns": [],
+  "label_type": "high_5d_up",
+  "label_horizons": [5],
+  "ranker_type": "dynamic_icir",
+  "ranker_identity": "observation_score",
+  "research_audit_required": true,
+  "include_technical": true,
+  "include_fundamental": true,
+  "include_flow": true,
+  "include_regime": false
+}
