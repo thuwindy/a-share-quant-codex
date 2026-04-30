@@ -1,53 +1,80 @@
-# A股量化系统（Codex 协作版）
+# A Share Quant Codex
 
-这是一个“课程项目级 / 研究原型级”的 A 股量化系统骨架，目标不是立刻实盘，而是把**学习资料、研究流程、A 股约束、Codex 协作方式**放进同一个可演进仓库里。
+一个面向 A 股日 K 的量化研究、候选池监控与 LLM 日报解释框架。
 
-## 你会得到什么
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/Status-Research%20Prototype-orange)
 
-- 一份学习梳理：`docs/study_guide.md`
-- 一份系统设计：`docs/architecture.md`
-- 一份 Codex 使用说明：`docs/codex_workflow.md`
-- 一套可运行原型：
-  - 模拟 A 股日频数据生成
-  - 因子计算
-  - 因子中性化
-  - 标签生成
-  - 因子加权打分
-  - 长-only 组合构建
-  - 简单回测与绩效评估
-- 一套 Codex 项目配置：
-  - `AGENTS.md`
-  - `skills/` 下的 3 个项目技能
+> 本项目不是荐股服务，也不是实盘交易建议。它提供的是一套可复现、可审计、可扩展的量化研究工程骨架：用数据验证投资假设，用规则生成候选池，用审计避免未来函数，用报告解释量化结果。
 
-## 仓库结构
+## 项目定位
 
-```text
-.
-├── AGENTS.md
-├── configs/
-├── data/
-├── docs/
-├── examples/
-├── outputs/
-├── skills/
-├── src/ashare_quant/
-└── tests/
+传统投资常说“公司不错”“行业有前景”“市场要反弹”。这个项目做的是把这些判断拆成可验证的工程流程：
+
+1. 提出投资假设
+2. 用历史数据验证
+3. 把有效逻辑沉淀成规则、因子或观察标签
+4. 在连续样本外周期里观察是否仍然有效
+
+项目核心目标不是堆因子，而是提升候选池质量：
+
+- 主策略 `top20 / top10 / top5` 是否更稳定
+- 高分票是否更容易兑现收益
+- 回撤和无效换手是否可控
+- 新因子、新标签、新规则是否有明确升级纪律
+- LLM 是否只负责解释，不参与选股决策
+
+## 功能特性
+
+- A 股日 K 数据统一 schema，支持本地 CSV 与 Tushare 增量更新。
+- 技术因子、资金流、低频基本面观察因子、观察层标签。
+- 时间有序切分、walk-forward、TimeSeriesSplit 风格研究流程。
+- 因子家族研究：IC、IR、分箱收益、缺失率、相关性、研究结论状态。
+- 主策略、弹性池、精选短线机会三条候选池输出链路。
+- 候选池质量看板：滚动收益、命中率、回撤、胜率、盈亏比。
+- 观察层标签：龙头扩散、上方兑现压力，用于日报解释和复盘。
+- 轻量向量化策略 sandbox，用于快速验证规则原型。
+- 策略审计层：检查未来函数、信号与持仓对齐、成本模型、缺失交易日。
+- ML 研究线：XGBoost / LightGBM 概率分数作为观察分或候选重排分。
+- LLM 日报解释层：读取结构化 JSON，生成大盘、策略、个股和风险解释。
+- PushPlus 推送脚本，支持晨报、晚报、周报。
+
+## 系统分层
+
+```mermaid
+flowchart TD
+  A["Data Layer\nCSV / Tushare / Premium Tables"] --> B["Factor Layer\ntechnical / money flow / observation labels"]
+  B --> C["Label Layer\nfuture return / high 5d up / industry excess"]
+  C --> D["Research Layer\nfactor family research / ablation / walk-forward"]
+  D --> E["Strategy Layer\nmain strategy / elastic pool / shortline"]
+  E --> F["Risk & Portfolio Layer\nrisk gate / target weights / paper monitor"]
+  E --> G["Observation Layer\nindustry leader follow / overhead density"]
+  F --> H["Report Layer\nlatest picks / evening brief / weekly review"]
+  G --> H
+  H --> I["LLM Explanation Layer\nexplain only, never select"]
 ```
 
-## 设计原则
+## 三层策略纪律
 
-1. **先研究、后交易**：先验证因子和组合逻辑，再谈执行。
-2. **面向 A 股约束**：T+1、ST、停牌、涨跌停、换手与冲击成本必须进入系统。
-3. **因子视角为主**：以截面选股 + 风险约束 + 回测验证为主线。
-4. **LLM 负责研究协作，不替代数值计算**：让 Codex 负责代码、文档、测试、流程自动化；让 Python 负责计算与回测。
-5. **从原型到生产渐进升级**：当前是 research-grade，后续可替换为真实数据、真实撮合、真实风控。
+| 层级 | 职责 | 默认行为 |
+| --- | --- | --- |
+| 主分层 | 决定哪些股票排到前面 | 只放已证明有系统级增量的核心因子 |
+| 观察层 | 解释候选池为什么强、隐患在哪里 | 不改排序，不改执行，只服务阅读和复盘 |
+| 执行管理层 | 决定买入、持有、止损、减仓等动作 | 当前默认冻结，只有跨时间稳定且动作含义清楚才允许升级 |
+
+当前观察层内置：
+
+- `industry_leader_follow_*`：龙头扩散标签，解释强势是否从个体扩散到板块。
+- `overhead_density_*`：上方兑现压力标签，解释冲高后是否容易遇到抛压。
 
 ## 快速开始
 
-### 1. 进入仓库
+### 1. 克隆项目
 
 ```bash
-cd a_share_quant_codex
+git clone https://github.com/thuwindy/a-share-quant-codex.git
+cd a-share-quant-codex
 ```
 
 ### 2. 安装依赖
@@ -57,200 +84,299 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-### 3. 生成模拟数据
+### 3. 运行模拟数据 demo
 
 ```bash
 .venv/bin/python examples/generate_mock_data.py
-```
-
-### 4. 运行示例回测
-
-```bash
 .venv/bin/python examples/run_mock_backtest.py
 ```
 
-### 5. 运行测试
+输出会写入：
+
+```text
+outputs/mock_metrics.json
+outputs/equity_curve.csv
+outputs/equity_curve.png
+outputs/factor_weights.json
+outputs/target_weights.csv
+```
+
+### 4. 运行测试
 
 ```bash
 .venv/bin/python -m unittest discover -s tests
 ```
 
-## 关键输出
+## 使用真实 A 股日 K 数据
 
-运行后会生成：
+本开源仓库不包含真实行情数据。你可以使用自己的 CSV 数据，或配置 Tushare token 后增量更新。
 
-- `outputs/mock_metrics.json`
-- `outputs/equity_curve.csv`
-- `outputs/equity_curve.png`
-- `outputs/factor_weights.json`
-- `outputs/target_weights.csv`
-
-## 生产化骨架新增项
-
-当前仓库还不是实盘系统，但已经新增两条可扩展接口：
-
-- `src/ashare_quant/data/base.py`：统一的 `MarketDataSource` 抽象，`CSVDataSource` 继续可用
-- `src/ashare_quant/data/tushare_adapter.py`：Tushare 日 K 增量抓取与统一 schema 归一化
-- `src/ashare_quant/execution/`：`ExecutionAdapter` 与 `PaperExecutionAdapter`
-
-可运行的 paper execution 示例：
+### 方式 A：把本地逐股票 CSV 标准化
 
 ```bash
-.venv/bin/python examples/run_paper_execution_demo.py
+.venv/bin/python scripts/bootstrap_cn_history_directory.py \
+  --source-dir /path/to/your/cn_daily_csv_dir \
+  --output-path data/a_share_daily.csv
 ```
 
-如果你要做“回测之后继续跑动态模拟盘”，现在可以直接用收盘后 paper monitor：
+### 方式 B：使用 Tushare 增量更新
+
+复制环境变量模板：
 
 ```bash
-.venv/bin/python scripts/run_paper_monitor.py \
-  --monitor-dir outputs/daily_monitor_auto \
-  --slice-path data/daily_monitor_slice.csv \
-  --adjust qfq \
-  --paper-config configs/paper_trade_guardrails.json \
-  --backtest-config configs/backtest_liquidity.json \
-  --state-path outputs/paper_monitor_auto/paper_state.json \
-  --output-dir outputs/paper_monitor_auto
+cp .env.example .env
 ```
 
-它和单次回测的区别是：
+在本地 shell 或 `.env` 中配置：
 
-- 会先执行上一交易日挂着的模拟订单
-- 会按最新收盘价更新 paper NAV、现金、持仓和回撤
-- 会把 drawdown / 单日亏损 / regime 风险状态一起纳入风控
-- 只为下一交易日生成新的待执行订单，而不是把 daily monitor 直接当买入清单
-
-## 真实日 K 工作流
-
-如果你已经有一份本地十年历史数据，并且只想用 Tushare 做 2026-03-20 之后的周度增量更新，推荐顺序是：
-
-1. 如果你的历史数据是“每只股票一个 CSV”的目录，先执行：
-
-```bash
-.venv/bin/python scripts/bootstrap_cn_history_directory.py --source-dir /path/to/your/cn_daily_csv_dir --output-path data/a_share_daily.csv
+```text
+TUSHARE_TOKEN=your_tushare_token
+TUSHARE_BYPASS_SYSTEM_PROXY=1
 ```
 
-2. 把基座历史文件放到 `data/a_share_daily.csv`
-3. 设置环境变量 `TUSHARE_TOKEN`
-4. 如果你需要走自定义 HTTP 入口，再额外设置 `TUSHARE_HTTP_URL`
-5. 每周五收盘后或周末运行：
-
-```bash
-.venv/bin/python scripts/update_tushare_daily_dataset.py --existing-path data/a_share_daily.csv
-```
-
-6. 跑真实日 K 研究回测：
-
-```bash
-.venv/bin/python examples/run_real_daily_backtest.py --data-path data/a_share_daily.csv --adjust qfq
-```
-
-如果你想直接用“研究 baseline -> 更接近实盘原型”的默认配置，推荐：
-
-```bash
-.venv/bin/python examples/run_real_daily_backtest.py --data-path data/a_share_daily_industry.csv --adjust qfq --research-config configs/recommended_default_config.json --backtest-config configs/backtest_liquidity.json
-```
-
-当前默认配置已经从“monitor 优先”切到“更接近实盘的低换手原型”，核心是：
-
-- `stable6` 因子集，而不是默认全开 `all12`
-- 只用 `3d/5d` 短周期标签，对齐 `5d` 持有
-- 更强的 no-trade band
-- monitor / observation pool 与 tradable strategy / deployable prototype 两层分离
-
-保留的旧配置在：
-
-- `configs/research_monitor_legacy.json`
-
-如果你想直接试“研究机器人当前效果”，推荐用全量主库先切研究样本，再一次性跑回测和 LLM-ready 摘要：
-
-```bash
-.venv/bin/python scripts/run_real_research_workflow.py --input-path data/a_share_daily.csv --slice-path data/research_slice.csv --start-date 2019-01-01 --max-codes 500 --adjust qfq
-```
-
-说明：
-
-- `qfq` 更适合长区间日 K 因子研究
-- 如果你的本地历史文件本身就是未复权原始行情，可以先用 `--adjust none`
-- 更新脚本默认只从本地文件里的**最后一个交易日之后**开始增量拉取，不会重下整段十年历史
-- `--max-codes 0` 表示保留整个符合条件的股票池，而不是只取高流动性的前 N 只
-- 如果官方默认入口不通，可以设置 `TUSHARE_HTTP_URL=http://8.136.22.187:8010/`，或在脚本上显式传 `--http-url`
-- 如果第三方要求走标准代理，也可以设置 `TUSHARE_PROXY_URL=http://x.x.x.x:xxxx`，或在脚本上显式传 `--proxy-url`
-- 如果你的 macOS 系统代理把 Tushare 请求带偏了，可以额外传 `--bypass-system-proxy`，或设置 `TUSHARE_BYPASS_SYSTEM_PROXY=1`
-
-先做最小连通性检查：
+先做连通性检查：
 
 ```bash
 .venv/bin/python scripts/check_tushare_connection.py --bypass-system-proxy
 ```
 
-生成最新一期候选股：
+再执行增量更新：
 
 ```bash
-.venv/bin/python scripts/generate_latest_picks.py --data-path data/research_slice.csv --adjust qfq --output-prefix latest_picks
+.venv/bin/python scripts/update_tushare_daily_dataset.py \
+  --existing-path data/a_share_daily.csv \
+  --bypass-system-proxy
 ```
 
-做 walk-forward 对比：
+## 常用命令
+
+### 生成最新候选池
 
 ```bash
-.venv/bin/python scripts/run_walk_forward_grid.py --input-path data/a_share_daily.csv --start-date 2019-01-01 --max-codes-list 200,500 --train-years-list 2,3 --adjust qfq --output-prefix walk_forward_expanded
+.venv/bin/python scripts/generate_latest_picks.py \
+  --data-path data/a_share_daily.csv \
+  --adjust qfq \
+  --output-prefix latest_picks
 ```
 
-做 baseline 到“可实盘原型”的 ablation：
+### 跑真实日 K 研究回测
 
 ```bash
-.venv/bin/python scripts/run_ablation_suite.py --data-path data/a_share_daily_industry.csv --adjust qfq --output-dir outputs/ablation_suite
+.venv/bin/python examples/run_real_daily_backtest.py \
+  --data-path data/a_share_daily.csv \
+  --adjust qfq \
+  --research-config configs/recommended_default_config.json \
+  --backtest-config configs/backtest_liquidity.json
 ```
 
-这会输出：
-
-- `outputs/ablation_suite/ablation_summary.csv`
-- `outputs/ablation_suite/ablation_summary.md`
-- 每个 scenario 各自的 `equity_curve / ic_series / quantile_summary / industry_performance / size_performance / market_state_performance / construction_grid / cost_sensitivity`
-- `recommended_default_config.json` 与双结论摘要（分析师视角 / 交易员视角）
-
-如果你手头已经有 `code -> industry/name/...` 的本地映射表，也可以先不等 Tushare，直接回填元数据：
+### 跑 walk-forward 稳定性验证
 
 ```bash
-.venv/bin/python scripts/enrich_metadata_from_csv.py --existing-path data/a_share_daily.csv --metadata-path data/stock_metadata.csv
+.venv/bin/python scripts/run_walk_forward_grid.py \
+  --input-path data/a_share_daily.csv \
+  --start-date 2019-01-01 \
+  --max-codes-list 200,500 \
+  --train-years-list 2,3 \
+  --adjust qfq \
+  --output-prefix walk_forward_expanded
 ```
 
-## 如何与 Codex 一起工作
+### 跑因子家族研究
 
-先读：
+```bash
+.venv/bin/python analysis/run_factor_family_research.py \
+  --data-path data/a_share_daily.csv \
+  --config configs/research_factor_family_momentum.json \
+  --output-dir outputs/factor_family_momentum
+```
 
-- `AGENTS.md`
-- `docs/codex_workflow.md`
-- `skills/`
+典型输出包括：
 
-推荐任务示例：
+- 单因子 IC 均值
+- IC 标准差
+- IR
+- 分箱收益表
+- 分箱单调性检查
+- 年度分段 IC
+- 缺失率
+- 与现有主因子的相关性
+- `research_status`: `keep / observe / reject`
+- `role_assignment`: `production_core_factor / research_factor / observation_label / execution_rule_candidate / archived_reject`
 
-- “给系统新增一个质量因子，并做 size / industry neutralization。”
-- “使用 subagents：一个检查未来函数泄漏，一个审计成本模型，一个补测试。”
-- “把当前回测从等权 Top-N 升级成风险预算约束组合。”
-- “为 T+1 / 停牌 / 涨跌停规则写回测约束测试。”
+### 跑候选池质量看板
 
+```bash
+.venv/bin/python scripts/run_stable_observation_daily_check.py \
+  --data-path data/a_share_daily.csv \
+  --research-config configs/research_production_default.json \
+  --output-prefix candidate_pool_quality_dashboard
+```
 
-## 新增文档
+看板重点回答：
 
-- `PROJECT_HANDOFF.md`：项目交接说明
-- `docs/05_course_alignment.md`：和课程项目要求的对齐方式
-- `docs/06_codex_rebuild_steps.md`：让 Codex 按步骤重建/扩展仓库
-- `docs/07_production_roadmap.md`：从研究原型到实盘机器人的升级路线
-- `docs/08_neurips_report_outline.md`：最终报告提纲
-- `docs/09_real_data_adapter_plan.md`：真实数据与执行接口接入计划
-- `docs/10_tushare_daily_workflow.md`：本地历史 + Tushare 周度增量更新工作流
+- 主策略 `top20 / top10 / top5` 质量是否稳定
+- 滚动收益、命中率、回撤、胜率、盈亏比是否恶化
+- 观察层标签是否真的帮助解释候选池
+- 失败归因更像排序问题，还是兑现路径问题
 
-## 当前原型的边界
+### 跑向量化策略 sandbox
 
-- 目前使用**模拟数据**，方便本地复现实验流程。
-- 回测是**研究原型**，不是逐笔撮合引擎。
-- 执行层还没有接实盘接口。
-- 风险模型目前只做了轻量版中性化；生产版应引入更完整的 Barra 风格风险框架。
-- `daily_monitor` 默认输出的是 observation pool + tradable strategy snapshot，不应直接当作无条件买入清单。
+```bash
+.venv/bin/python analysis/vectorized_strategy_sandbox.py \
+  --data-path data/a_share_daily.csv \
+  --strategy breakout \
+  --output-dir outputs/vectorized_sandbox
+```
 
-## 下一步建议
+sandbox 不是生产回测替代品，它用于快速验证规则原型并生成审计报告：
 
-1. 接入真实 A 股数据源（Tushare / AkShare / Wind / 聚宽 / 米筐等）
-2. 增加行业约束、风格暴露约束、换手约束
-3. 增加分层回测、Walk-forward、滚动训练与稳定性分析
-4. 用 Codex 技能把“因子开发 → 回测 → 报告输出”流程自动化
+- 是否使用 `shift(1)` 做 T+1 执行
+- 是否存在同日收盘信号同日成交
+- 收益口径是否清楚
+- 手续费和滑点是否计入
+- 信号、持仓、收益是否对齐
+
+## LLM 日报解释层
+
+LLM 在本项目中只做解释层，不做选股决策层。
+
+LLM 必须基于结构化 JSON 中已经存在的量化结果进行分析：
+
+- 主策略分数、排名、价格、行业、观察标签、`ml_score`
+- 弹性池分数、价格、市值、流动性
+- 短线分、连板、封单、换手、风险等级、买点区间、止损
+- 风控状态、市场宽度、板块轮动
+- Tushare 基本面字段，例如估值、ROE、营收和利润增速、负债率、毛利率
+
+配置方式：
+
+```bash
+cp .env.example .env
+```
+
+`.env.example` 中包含：
+
+```text
+LLM_API_KEY=
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+PUSHPLUS_TOKEN=
+PUSHPLUS_TOPIC=
+PUSHPLUS_CHANNEL=wechat
+```
+
+运行 LLM 旁路报告：
+
+```bash
+.venv/bin/python scripts/llm_report_renderer.py
+```
+
+发送 LLM 增强晚报：
+
+```bash
+.venv/bin/python scripts/send_pushplus_llm_evening_brief.py \
+  --llm-timeout-seconds 120 \
+  --llm-max-tokens 1200
+```
+
+硬校验规则：
+
+- 禁止 LLM 输出不在 JSON 里的股票名。
+- 禁止 LLM 自己编价格、涨幅、财务数字。
+- 缺少量化字段时必须写“暂不可判定”。
+- 某个 agent 失败时只降级该板块，不影响整份日报。
+- 主库不是最新可用交易日时，晚报应拒绝推送旧数据。
+
+## 目录结构
+
+```text
+.
+├── analysis/                  # 研究脚本、因子家族研究、策略 sandbox
+├── codex_skills/              # Codex 本地技能说明
+├── configs/                   # 研究、回测、风控、日报配置
+├── data/                      # 本地数据目录，开源仓库仅保留 .gitkeep
+├── docs/                      # 架构、研究流程、稳定观察期、LLM 旁路说明
+├── examples/                  # mock 数据、真实数据回测、paper execution demo
+├── outputs/                   # 运行输出目录，开源仓库仅保留 .gitkeep
+├── scripts/                   # 数据更新、日报、监控、训练、回测工作流脚本
+├── src/ashare_quant/          # 核心 Python 包
+│   ├── analysis/              # 候选池质量、绩效、walk-forward、报告
+│   ├── backtest/              # 研究型回测引擎、成本、指标
+│   ├── execution/             # paper monitor 与交易接口骨架
+│   ├── factors/               # 技术因子、注册表、中性化
+│   ├── labels/                # 未来收益与分类标签
+│   ├── models/                # 线性、Boosting、ML ranker
+│   ├── portfolio/             # 组合构建
+│   └── service/               # dashboard / trade API 骨架
+├── tests/                     # 单元测试
+├── .env.example               # 环境变量模板，不包含真实密钥
+├── SECURITY.md                # 开源安全说明
+└── README.md
+```
+
+## 数据格式
+
+核心日 K 表至少需要以下列：
+
+```text
+date, code, open, high, low, close, volume, amount
+```
+
+可选增强列：
+
+```text
+name, industry, market_cap, float_market_cap,
+pe_ttm, pb, ps_ttm, roe, gross_margin, debt_to_assets
+```
+
+低频基本面因子默认只作为研究和观察字段，不直接进入生产主分。原因是财报数据必须按可见时点处理，不能把未来公告后的财务数据错误地当作历史当日可见。
+
+## 配置说明
+
+常用配置：
+
+| 文件 | 用途 |
+| --- | --- |
+| `configs/research_production_default.json` | 当前主策略研究配置 |
+| `configs/research_under20_elastic_top20.json` | 20 元以下弹性池配置 |
+| `configs/research_shortline_opportunity.json` | 精选短线机会配置 |
+| `configs/risk_governor.json` | 风控门配置 |
+| `configs/recommended_default_config.json` | 默认推荐研究配置 |
+| `configs/research_factor_family_*.json` | 因子家族研究配置 |
+| `configs/research_ml_*.json` | ML 研究配置 |
+
+## 开源安全
+
+这个仓库不包含：
+
+- 真实 Tushare token
+- LLM API key
+- PushPlus token
+- 个人路径
+- 云服务器 IP
+- SSH 私钥
+- 真实行情主库
+- 运行产物和日志
+
+真实密钥请放在本地环境变量或未跟踪的 `.env` 文件中。参考 `SECURITY.md`。
+
+## 当前边界
+
+- 这是研究型工程框架，不是自动实盘交易系统。
+- 回测是日 K 研究回测，不是逐笔撮合。
+- A 股涨跌停、停牌、T+1、滑点、冲击成本都需要在正式交易前做更严格建模。
+- LLM 输出只能解释量化结果，不能替代量化决策。
+- 开源仓库不附带真实数据，用户需要自行准备合法数据源。
+
+## 推荐阅读顺序
+
+1. `docs/architecture.md`
+2. `docs/17_research_audit_workflow.md`
+3. `docs/18_stable_observation_cycle.md`
+4. `docs/19_llm_sidecar_ops_and_report.md`
+5. `AGENTS.md`
+
+## License
+
+MIT License. See `LICENSE`.
+
