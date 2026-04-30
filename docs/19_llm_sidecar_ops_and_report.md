@@ -4,13 +4,11 @@
 
 ## 环境变量
 
-使用 OpenAI 兼容中转站接口：
+使用 OpenAI 兼容接口。先复制 `.env.example`，再在本地未跟踪的 `.env` 或 shell 环境中填写真实值：
 
 ```bash
-export LLM_API_KEY="你的中转站 key"
-export LLM_BASE_URL="https://your-proxy.example.com/v1"
-export LLM_MODEL="deepseek-chat"
-export LLM_RETRIES="1"
+cp .env.example .env
+# edit .env locally; never commit real keys
 ```
 
 兼容备用变量：`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`。`LLM_RETRIES` 用于中转站间歇超时时重试，默认 1 次。
